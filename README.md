@@ -8,29 +8,29 @@ AppImages normally mount via FUSE on every launch, adding overhead. This script 
 
 ## Installation
 ```bash
-curl -o ~/.local/bin/install-appimage https://raw.githubusercontent.com/YOUR_USERNAME/appimage-installer/main/install-appimage
-chmod +x ~/.local/bin/install-appimage
+curl -o ~/.local/bin/appimage-installer https://raw.githubusercontent.com/Asifm95/appimage-installer/refs/heads/master/appimage-installer.sh
+chmod +x ~/.local/bin/appimage-installer
 ```
 
 ## Usage
 ```bash
 # Install an AppImage
-install-appimage ~/Downloads/MyApp-1.0.0-x86_64.AppImage
+appimage-installer ~/Downloads/MyApp-1.0.0-x86_64.AppImage
 
 # Install with custom name
-install-appimage ~/Downloads/MyApp-1.0.0-x86_64.AppImage myapp
+appimage-installer ~/Downloads/MyApp-1.0.0-x86_64.AppImage myapp
 
 # Upgrade existing installation
-install-appimage -u ~/Downloads/MyApp-2.0.0-x86_64.AppImage myapp
+appimage-installer -u ~/Downloads/MyApp-2.0.0-x86_64.AppImage myapp
 
 # Upgrade with backup
-install-appimage -u -b ~/Downloads/MyApp-2.0.0-x86_64.AppImage myapp
+appimage-installer -u -b ~/Downloads/MyApp-2.0.0-x86_64.AppImage myapp
 
 # List installed apps
-install-appimage --list
+appimage-installer --list
 
 # Remove an app
-install-appimage --remove myapp
+appimage-installer --remove myapp
 ```
 
 ## Options
