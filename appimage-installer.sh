@@ -19,9 +19,11 @@ BACKUP=false
 FORCE=false
 DELETE_APPIMAGE=false
 UPDATE_SOURCE=""
+INSTALL_FROM=""
 
 usage() {
     echo "Usage: $(basename "$0") [options] <appimage-file> [app-name]"
+    echo "       $(basename "$0") --from <source> [app-name]"
     echo ""
     echo "Arguments:"
     echo "  appimage-file   Path to the .AppImage file"
@@ -33,6 +35,7 @@ usage() {
     echo "  -f, --force            Force install, remove existing without prompting or backup"
     echo "  -d, --delete           Delete the original AppImage file after installation"
     echo "  -s, --source <url>     Set update source URL for the app"
+    echo "  -F, --from <source>    Install directly from source (github:owner/repo or direct:url)"
     echo ""
     echo "Management Options:"
     echo "  -l, --list             List installed AppImages"
@@ -56,6 +59,8 @@ usage() {
     echo "  $(basename "$0") --upgrade Obsidian-1.5.3.AppImage obsidian"
     echo "  $(basename "$0") -u -b myapp-2.0.AppImage"
     echo "  $(basename "$0") app.AppImage -s github:user/repo"
+    echo "  $(basename "$0") --from github:user/repo myapp"
+    echo "  $(basename "$0") -F direct:https://example.com/app.AppImage"
     echo "  $(basename "$0") --list"
     echo "  $(basename "$0") --check"
     echo "  $(basename "$0") --check myapp"
@@ -260,6 +265,65 @@ get_github_download_url() {
     else
         return 1
     fi
+}
+
+# Download AppImage from source (github:owner/repo or direct:url)
+# Outputs: path to downloaded file
+download_from_source() {
+    local source="$1"
+    local source_type="${source%%:*}"
+    local source_value="${source#*:}"
+
+    # Validate source format
+    case "$source_type" in
+        github|direct)
+            ;;
+        *)
+            echo -e "${RED}Error: Invalid source format. Use 'github:owner/repo' or 'direct:url'${NC}" >&2
+            return 1
+            ;;
+    esac
+
+    local download_url=""
+    local filename=""
+
+    case "$source_type" in
+        github)
+            echo -e "${BLUE}Fetching latest release from GitHub: $source_value${NC}" >&2
+            download_url=$(get_github_download_url "$source_value")
+            if [ -z "$download_url" ]; then
+                echo -e "${RED}Error: Could not find AppImage in GitHub releases${NC}" >&2
+                return 1
+            fi
+            filename=$(basename "$download_url")
+            ;;
+        direct)
+            download_url="$source_value"
+            filename=$(basename "$download_url" | sed 's/?.*//')  # Remove query params
+            ;;
+    esac
+
+    # Create temp directory for download
+    local temp_dir
+    temp_dir=$(mktemp -d)
+    local temp_file="$temp_dir/$filename"
+
+    # Download with progress
+    echo -e "${BLUE}Downloading: $download_url${NC}" >&2
+    if ! curl -L --progress-bar -o "$temp_file" "$download_url"; then
+        echo -e "${RED}Error: Download failed${NC}" >&2
+        rm -rf "$temp_dir"
+        return 1
+    fi
+
+    # Verify it's a valid file (not an error page)
+    if [ ! -s "$temp_file" ]; then
+        echo -e "${RED}Error: Downloaded file is empty${NC}" >&2
+        rm -rf "$temp_dir"
+        return 1
+    fi
+
+    echo "$temp_file"
 }
 
 # Check if update is available for an app
@@ -722,6 +786,11 @@ while [[ $# -gt 0 ]]; do
             UPDATE_SOURCE="$1"
             shift
             ;;
+        -F|--from)
+            shift
+            INSTALL_FROM="$1"
+            shift
+            ;;
         -h|--help)
             usage
             ;;
@@ -739,18 +808,47 @@ done
 # Restore positional arguments
 set -- "${POSITIONAL_ARGS[@]}"
 
-# Check arguments
-if [ $# -lt 1 ]; then
-    usage
-fi
+# Handle install from URL
+if [ -n "$INSTALL_FROM" ]; then
+    # Download the AppImage from the source
+    APPIMAGE_PATH=$(download_from_source "$INSTALL_FROM")
+    if [ $? -ne 0 ] || [ -z "$APPIMAGE_PATH" ]; then
+        exit 1
+    fi
 
-APPIMAGE_PATH="$(realpath "$1")"
-APP_NAME="${2:-}"
+    # Auto-set update source for future updates
+    if [ -z "$UPDATE_SOURCE" ]; then
+        UPDATE_SOURCE="$INSTALL_FROM"
+    fi
 
-# Validate AppImage file exists
-if [ ! -f "$APPIMAGE_PATH" ]; then
-    echo -e "${RED}Error: File '$APPIMAGE_PATH' not found${NC}"
-    exit 1
+    # Clean up downloaded file after installation
+    DELETE_APPIMAGE=true
+
+    # App name from positional arg or derive from source
+    APP_NAME="${1:-}"
+    if [ -z "$APP_NAME" ]; then
+        # Try to derive from GitHub repo name or filename
+        source_type="${INSTALL_FROM%%:*}"
+        source_value="${INSTALL_FROM#*:}"
+        if [ "$source_type" = "github" ]; then
+            # Use repo name (e.g., "obsidian-releases" from "obsidianmd/obsidian-releases")
+            APP_NAME=$(echo "$source_value" | cut -d'/' -f2 | tr '[:upper:]' '[:lower:]')
+        fi
+    fi
+else
+    # Check arguments for local file install
+    if [ $# -lt 1 ]; then
+        usage
+    fi
+
+    APPIMAGE_PATH="$(realpath "$1")"
+    APP_NAME="${2:-}"
+
+    # Validate AppImage file exists
+    if [ ! -f "$APPIMAGE_PATH" ]; then
+        echo -e "${RED}Error: File '$APPIMAGE_PATH' not found${NC}"
+        exit 1
+    fi
 fi
 
 # Derive app name from filename if not provided
